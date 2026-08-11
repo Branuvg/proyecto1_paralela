@@ -18,6 +18,7 @@ private:
 
     void drawBackground(sf::RenderWindow& window);
     void drawWater(sf::RenderWindow& window, float waterLevel);
+    void drawWavePattern(sf::RenderWindow& window, float waterLevel);
     void drawSky(sf::RenderWindow& window, float waterLevel);
     void drawElements(sf::RenderWindow& window, const std::vector<std::shared_ptr<Element>>& elements);
 

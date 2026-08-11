@@ -44,10 +44,15 @@ public:
     void draw(sf::RenderWindow& window) override {
         sf::CircleShape circle(radius);
         circle.setPosition(sf::Vector2f(x - radius, y - radius));
-        circle.setFillColor(color);
-        circle.setOutlineThickness(1.0f);
-        circle.setOutlineColor(sf::Color::Blue);
+        circle.setFillColor(sf::Color(200, 220, 255, 180));
+        circle.setOutlineThickness(2.0f);
+        circle.setOutlineColor(sf::Color::Cyan);
         window.draw(circle);
+
+        sf::CircleShape shine(radius / 3);
+        shine.setPosition(sf::Vector2f(x - radius/3, y - radius/2));
+        shine.setFillColor(sf::Color::White);
+        window.draw(shine);
     }
 };
 
@@ -69,8 +74,15 @@ public:
     void draw(sf::RenderWindow& window) override {
         sf::CircleShape star(radius, 5);
         star.setPosition(sf::Vector2f(x - radius, y - radius));
-        star.setFillColor(color);
+        star.setFillColor(sf::Color(255, 220, 80));
+        star.setOutlineThickness(1.5f);
+        star.setOutlineColor(sf::Color(255, 200, 0));
         window.draw(star);
+
+        sf::CircleShape center(radius / 2);
+        center.setPosition(sf::Vector2f(x - radius/2, y - radius/2));
+        center.setFillColor(sf::Color(255, 150, 0));
+        window.draw(center);
     }
 };
 
@@ -101,10 +113,19 @@ public:
     }
 
     void draw(sf::RenderWindow& window) override {
-        sf::CircleShape turtle(radius);
-        turtle.setPosition(sf::Vector2f(x - radius, y - radius));
-        turtle.setFillColor(color);
-        window.draw(turtle);
+        sf::CircleShape shell(radius);
+        shell.setPosition(sf::Vector2f(x - radius, y - radius));
+        shell.setFillColor(sf::Color(50, 150, 50));
+        shell.setOutlineThickness(2.0f);
+        shell.setOutlineColor(sf::Color(30, 100, 30));
+        window.draw(shell);
+
+        sf::CircleShape head(radius / 3);
+        float headX = x + radius * std::cos(angle);
+        float headY = y + radius * std::sin(angle);
+        head.setPosition(sf::Vector2f(headX - radius/3, headY - radius/3));
+        head.setFillColor(sf::Color(100, 180, 100));
+        window.draw(head);
     }
 };
 
@@ -125,9 +146,21 @@ public:
     }
 
     void draw(sf::RenderWindow& window) override {
-        sf::CircleShape crab(radius);
-        crab.setPosition(sf::Vector2f(x - radius, y - radius));
-        crab.setFillColor(color);
-        window.draw(crab);
+        sf::CircleShape body(radius);
+        body.setPosition(sf::Vector2f(x - radius, y - radius));
+        body.setFillColor(sf::Color(220, 80, 30));
+        body.setOutlineThickness(2.0f);
+        body.setOutlineColor(sf::Color(180, 50, 0));
+        window.draw(body);
+
+        sf::CircleShape claw1(radius / 2);
+        claw1.setPosition(sf::Vector2f(x - radius, y - radius));
+        claw1.setFillColor(sf::Color(200, 60, 20));
+        window.draw(claw1);
+
+        sf::CircleShape claw2(radius / 2);
+        claw2.setPosition(sf::Vector2f(x + radius / 2, y - radius));
+        claw2.setFillColor(sf::Color(200, 60, 20));
+        window.draw(claw2);
     }
 };

@@ -18,7 +18,7 @@ public:
 
     const std::vector<std::shared_ptr<Element>>& getElements() const;
 
-    float getWaterLevel() const { return screenHeight * 0.75f; }
+    float getWaterLevel() const { return screenHeight * 0.20f; }
 
 private:
     float screenWidth, screenHeight;
