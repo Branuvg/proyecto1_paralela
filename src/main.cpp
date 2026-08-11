@@ -6,7 +6,9 @@ int main() {
     const float WINDOW_WIDTH = 1200.0f;
     const float WINDOW_HEIGHT = 800.0f;
 
-    sf::RenderWindow window(sf::VideoMode(WINDOW_WIDTH, WINDOW_HEIGHT), "Marine Simulation");
+    sf::RenderWindow window(sf::VideoMode(sf::Vector2u(static_cast<unsigned int>(WINDOW_WIDTH),
+                                                        static_cast<unsigned int>(WINDOW_HEIGHT))),
+                           "Marine Simulation");
     window.setFramerateLimit(60);
 
     Simulation simulation(WINDOW_WIDTH, WINDOW_HEIGHT);
@@ -25,14 +27,13 @@ int main() {
     sf::Clock clock;
 
     while (window.isOpen()) {
-        sf::Event event;
-        while (window.pollEvent(event)) {
-            if (event.type == sf::Event::Closed) {
+        while (auto event = window.pollEvent()) {
+            if (event->is<sf::Event::Closed>()) {
                 window.close();
             }
-            if (event.type == sf::Event::MouseButtonPressed) {
-                float x = static_cast<float>(event.mouseButton.x);
-                float y = static_cast<float>(event.mouseButton.y);
+            if (auto mousePress = event->getIf<sf::Event::MouseButtonPressed>()) {
+                float x = static_cast<float>(mousePress->position.x);
+                float y = static_cast<float>(mousePress->position.y);
 
                 if (y < simulation.getWaterLevel()) {
                     simulation.addStarfish(x, y);

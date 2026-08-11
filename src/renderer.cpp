@@ -25,14 +25,14 @@ void Renderer::drawSky(sf::RenderWindow& window, float waterLevel) {
     int hour = timeinfo->tm_hour;
 
     sf::RectangleShape sky(sf::Vector2f(screenWidth, waterLevel));
-    sky.setPosition(0, 0);
+    sky.setPosition(sf::Vector2f(0.0f, 0.0f));
     sky.setFillColor(getSkyColor(hour));
     window.draw(sky);
 }
 
 void Renderer::drawWater(sf::RenderWindow& window, float waterLevel) {
     sf::RectangleShape water(sf::Vector2f(screenWidth, screenHeight - waterLevel));
-    water.setPosition(0, waterLevel);
+    water.setPosition(sf::Vector2f(0.0f, waterLevel));
     water.setFillColor(sf::Color::Blue);
     window.draw(water);
 }
