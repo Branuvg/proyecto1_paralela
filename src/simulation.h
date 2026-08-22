@@ -1,32 +1,34 @@
 #pragma once
 
-#include "elements.h"
-#include <memory>
 #include <vector>
-#include <ctime>
+
+#include "elements.h"
 
 class Simulation {
 public:
     Simulation(float width, float height);
-    ~Simulation();
+
+    // Reparte elementCount entre los tres tipos y los coloca aleatoriamente.
+    void populate(int elementCount, unsigned seed);
 
     void update(float dt);
-    void addBubble(float x, float y);
-    void addStarfish(float x, float y);
-    void addTurtle(float x, float y);
-    void addCrab(float x, float y);
 
-    const std::vector<std::shared_ptr<Element>>& getElements() const;
-
-    float getWaterLevel() const { return screenHeight * 0.20f; }
+    const std::vector<Bubble>& getBubbles() const { return bubbles; }
+    const std::vector<Starfish>& getStarfish() const { return starfish; }
+    const std::vector<Turtle>& getTurtles() const { return turtles; }
+    const World& getWorld() const { return world; }
 
 private:
-    float screenWidth, screenHeight;
-    std::vector<std::shared_ptr<Element>> elements;
-
+    void advanceWorld(float dt);
+    void applyMagnifier();            // efecto lupa entre burbujas y estrellas
+    void resolveTurtleCollisions();   // solo ajusta velocidades, no posiciones
     void updateElements(float dt);
-    void checkCollisions();
-    void spawnCrabIfHourChanged();
 
-    int lastHour;
+    World world;
+    float maxWaterLevel;   // y mas alta que alcanza el agua, donde se detiene
+    float waterRiseSpeed;
+
+    std::vector<Bubble> bubbles;
+    std::vector<Starfish> starfish;
+    std::vector<Turtle> turtles;
 };

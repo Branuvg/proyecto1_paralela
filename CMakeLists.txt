@@ -26,6 +26,7 @@ find_package(OpenMP REQUIRED)
 set(SOURCES
     src/main.cpp
     src/config.cpp
+    src/elements.cpp
     src/metrics.cpp
     src/simulation.cpp
     src/renderer.cpp

@@ -1,88 +1,211 @@
 #include "simulation.h"
-#include <cstdlib>
 
-Simulation::Simulation(float width, float height)
-    : screenWidth(width), screenHeight(height) {
-    lastHour = -1;
+#include <algorithm>
+#include <cmath>
+#include <random>
+
+namespace {
+
+// Reparto de los N elementos entre los tres tipos.
+constexpr float BUBBLE_SHARE = 0.55f;
+constexpr float STARFISH_SHARE = 0.25f;
+
+constexpr float DAY_SECONDS = 45.0f;    // cuanto dura un ciclo completo de cielo
+constexpr float WAVE_SPEED = 1.6f;
+constexpr float WATER_RISE_SECONDS = 20.0f;
+
+constexpr float START_WATER_FRACTION = 0.60f;   // el agua empieza baja
+constexpr float MAX_WATER_FRACTION = 0.26f;     // y sube hasta aca
+
+}  // namespace
+
+Simulation::Simulation(float width, float height) {
+    world.width = width;
+    world.height = height;
+    world.waterLevel = height * START_WATER_FRACTION;
+    world.waveAmplitude = std::max(4.0f, height * 0.012f);
+    world.waveFrequency = 2.0f * PI / std::max(120.0f, width * 0.28f);
+
+    maxWaterLevel = height * MAX_WATER_FRACTION;
+    waterRiseSpeed = (world.waterLevel - maxWaterLevel) / WATER_RISE_SECONDS;
 }
 
-Simulation::~Simulation() = default;
+void Simulation::populate(int elementCount, unsigned seed) {
+    std::mt19937 rng(seed);
+    std::uniform_real_distribution<float> unit(0.0f, 1.0f);
 
-void Simulation::update(float dt) {
-    updateElements(dt);
-    checkCollisions();
-    spawnCrabIfHourChanged();
+    // Todo nace dentro del agua actual; lo que el agua descubra al subir queda libre.
+    float spawnTop = world.waterLevel;
+    float spawnDepth = world.height - spawnTop;
 
-    elements.erase(
-        std::remove_if(elements.begin(), elements.end(),
-                      [](const std::shared_ptr<Element>& e) { return !e->alive; }),
-        elements.end()
-    );
-}
+    int bubbleCount = static_cast<int>(elementCount * BUBBLE_SHARE);
+    int starfishCount = static_cast<int>(elementCount * STARFISH_SHARE);
+    int turtleCount = elementCount - bubbleCount - starfishCount;
 
-void Simulation::updateElements(float dt) {
-    for (size_t i = 0; i < elements.size(); ++i) {
-        elements[i]->update(dt, screenWidth, screenHeight);
+    bubbles.clear();
+    starfish.clear();
+    turtles.clear();
+    bubbles.reserve(bubbleCount);
+    starfish.reserve(starfishCount);
+    turtles.reserve(turtleCount);
+
+    // Las burbujas nacen repartidas en la columna de agua para que no suban en bloque.
+    for (int i = 0; i < bubbleCount; i++) {
+        Bubble bubble;
+        bubble.x = unit(rng) * world.width;
+        bubble.y = spawnTop + unit(rng) * spawnDepth;
+        bubble.riseSpeed = 25.0f + unit(rng) * 55.0f;
+        bubble.baseRadius = 3.0f + unit(rng) * 5.0f;
+        bubble.radius = bubble.baseRadius;
+        bubble.color = sf::Color(static_cast<std::uint8_t>(170 + unit(rng) * 60),
+                                 static_cast<std::uint8_t>(200 + unit(rng) * 45),
+                                 255,
+                                 static_cast<std::uint8_t>(140 + unit(rng) * 80));
+        bubbles.push_back(bubble);
+    }
+
+    for (int i = 0; i < starfishCount; i++) {
+        Starfish star;
+        star.x = unit(rng) * world.width;
+        star.y = spawnTop + unit(rng) * spawnDepth;
+        star.angle = unit(rng) * 2.0f * PI;
+        star.spin = (unit(rng) < 0.5f ? -1.0f : 1.0f) * (0.4f + unit(rng) * 1.6f);
+        star.baseRadius = 7.0f + unit(rng) * 7.0f;
+        star.radius = star.baseRadius;
+        star.color = sf::Color(static_cast<std::uint8_t>(200 + unit(rng) * 55),
+                               static_cast<std::uint8_t>(60 + unit(rng) * 130),
+                               static_cast<std::uint8_t>(60 + unit(rng) * 90));
+        starfish.push_back(star);
+    }
+
+    for (int i = 0; i < turtleCount; i++) {
+        Turtle turtle;
+        turtle.x = unit(rng) * world.width;
+        turtle.y = spawnTop + unit(rng) * spawnDepth;
+
+        // Direccion diagonal aleatoria proyectada sobre un angulo cualquiera.
+        float angle = unit(rng) * 2.0f * PI;
+        float speed = 35.0f + unit(rng) * 60.0f;
+        turtle.vx = speed * std::cos(angle);
+        turtle.vy = speed * std::sin(angle);
+
+        turtle.radius = 8.0f + unit(rng) * 6.0f;
+        turtle.color = sf::Color(static_cast<std::uint8_t>(30 + unit(rng) * 70),
+                                 static_cast<std::uint8_t>(120 + unit(rng) * 100),
+                                 static_cast<std::uint8_t>(40 + unit(rng) * 70));
+        turtles.push_back(turtle);
     }
 }
 
-void Simulation::checkCollisions() {
-    const float COLLISION_DISTANCE = 25.0f;
+void Simulation::update(float dt) {
+    // Primero las interacciones, que solo leen posiciones, y despues el movimiento.
+    advanceWorld(dt);
+    applyMagnifier();
+    resolveTurtleCollisions();
+    updateElements(dt);
+}
 
-    for (size_t i = 0; i < elements.size(); ++i) {
-        for (size_t j = i + 1; j < elements.size(); ++j) {
-            auto& e1 = elements[i];
-            auto& e2 = elements[j];
+void Simulation::advanceWorld(float dt) {
+    world.timeOfDay += dt / DAY_SECONDS;
+    if (world.timeOfDay >= 1.0f) {
+        world.timeOfDay -= std::floor(world.timeOfDay);
+    }
 
-            float dx = e2->x - e1->x;
-            float dy = e2->y - e1->y;
-            float dist = std::sqrt(dx * dx + dy * dy);
+    world.wavePhase += WAVE_SPEED * dt;
+    if (world.wavePhase > 2.0f * PI) {
+        world.wavePhase -= 2.0f * PI;
+    }
 
-            if (dist < COLLISION_DISTANCE) {
-                if (e1->type == ElementType::BUBBLE && e2->type == ElementType::STARFISH) {
-                    e1->alive = false;
-                } else if (e1->type == ElementType::STARFISH && e2->type == ElementType::BUBBLE) {
-                    e2->alive = false;
-                } else if (e1->type == ElementType::TURTLE && e2->type == ElementType::TURTLE) {
-                    auto* t1 = dynamic_cast<Turtle*>(e1.get());
-                    auto* t2 = dynamic_cast<Turtle*>(e2.get());
-                    if (t1 && t2) {
-                        t1->angle -= M_PI / 3.0f;
-                        t2->angle += M_PI / 3.0f;
-                    }
-                }
+    // El agua sube hasta el nivel maximo y ahi se queda.
+    world.waterLevel = std::max(maxWaterLevel, world.waterLevel - waterRiseSpeed * dt);
+}
+
+void Simulation::applyMagnifier() {
+    // Dos pasadas separadas: cada una escribe solo su propio arreglo, de modo que
+    // ningun elemento tiene que modificar a otro.
+    int bubbleCount = static_cast<int>(bubbles.size());
+    int starfishCount = static_cast<int>(starfish.size());
+
+    for (int i = 0; i < bubbleCount; i++) {
+        Bubble& bubble = bubbles[i];
+        bubble.magnified = false;
+        for (int j = 0; j < starfishCount; j++) {
+            const Starfish& star = starfish[j];
+            float dx = star.x - bubble.x;
+            float dy = star.y - bubble.y;
+            float reach = bubble.radius + star.radius;
+            if (dx * dx + dy * dy < reach * reach) {
+                bubble.magnified = true;
+                break;
+            }
+        }
+    }
+
+    for (int i = 0; i < starfishCount; i++) {
+        Starfish& star = starfish[i];
+        star.magnified = false;
+        for (int j = 0; j < bubbleCount; j++) {
+            const Bubble& bubble = bubbles[j];
+            float dx = bubble.x - star.x;
+            float dy = bubble.y - star.y;
+            float reach = bubble.radius + star.radius;
+            if (dx * dx + dy * dy < reach * reach) {
+                star.magnified = true;
+                break;
             }
         }
     }
 }
 
-void Simulation::spawnCrabIfHourChanged() {
-    time_t now = time(nullptr);
-    struct tm* timeinfo = localtime(&now);
-    int currentHour = timeinfo->tm_hour;
+void Simulation::resolveTurtleCollisions() {
+    // Cada tortuga calcula su propia velocidad leyendo solo posiciones ajenas.
+    int turtleCount = static_cast<int>(turtles.size());
 
-    if (currentHour != lastHour) {
-        lastHour = currentHour;
-        addCrab(screenWidth / 2.0f, screenHeight / 2.0f);
+    for (int i = 0; i < turtleCount; i++) {
+        Turtle& turtle = turtles[i];
+
+        for (int j = 0; j < turtleCount; j++) {
+            if (i == j) {
+                continue;
+            }
+            const Turtle& other = turtles[j];
+
+            float dx = turtle.x - other.x;
+            float dy = turtle.y - other.y;
+            float distanceSquared = dx * dx + dy * dy;
+            float reach = turtle.radius + other.radius;
+
+            if (distanceSquared >= reach * reach || distanceSquared < 1e-6f) {
+                continue;
+            }
+
+            float distance = std::sqrt(distanceSquared);
+            float nx = dx / distance;
+            float ny = dy / distance;
+
+            // Solo rebota si venia acercandose, para que no quede pegada vibrando.
+            float approach = turtle.vx * nx + turtle.vy * ny;
+            if (approach < 0.0f) {
+                turtle.vx -= 2.0f * approach * nx;
+                turtle.vy -= 2.0f * approach * ny;
+            }
+        }
     }
 }
 
-void Simulation::addBubble(float x, float y) {
-    elements.push_back(std::make_shared<Bubble>(x, y));
-}
+void Simulation::updateElements(float dt) {
+    int bubbleCount = static_cast<int>(bubbles.size());
+    for (int i = 0; i < bubbleCount; i++) {
+        updateBubble(bubbles[i], dt, world);
+    }
 
-void Simulation::addStarfish(float x, float y) {
-    elements.push_back(std::make_shared<Starfish>(x, y));
-}
+    int starfishCount = static_cast<int>(starfish.size());
+    for (int i = 0; i < starfishCount; i++) {
+        updateStarfish(starfish[i], dt, world);
+    }
 
-void Simulation::addTurtle(float x, float y) {
-    elements.push_back(std::make_shared<Turtle>(x, y));
-}
-
-void Simulation::addCrab(float x, float y) {
-    elements.push_back(std::make_shared<Crab>(x, y));
-}
-
-const std::vector<std::shared_ptr<Element>>& Simulation::getElements() const {
-    return elements;
+    int turtleCount = static_cast<int>(turtles.size());
+    for (int i = 0; i < turtleCount; i++) {
+        updateTurtle(turtles[i], dt, world);
+    }
 }
