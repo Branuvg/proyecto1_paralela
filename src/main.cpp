@@ -2,7 +2,7 @@
 
 #include <chrono>
 #include <iostream>
-#include <random>
+#include <sstream>
 
 #include "config.h"
 #include "metrics.h"
@@ -26,23 +26,6 @@ int setupThreads(const Config& config) {
     (void)config;
     return 1;
 #endif
-}
-
-// Reparte los N elementos entre los tres tipos en posiciones aleatorias.
-void spawnElements(Simulation& simulation, const Config& config, std::mt19937& rng) {
-    std::uniform_real_distribution<float> randomX(0.0f, static_cast<float>(config.windowWidth));
-    std::uniform_real_distribution<float> randomY(0.0f, static_cast<float>(config.windowHeight));
-
-    for (int i = 0; i < config.elementCount; i++) {
-        float x = randomX(rng);
-        float y = randomY(rng);
-
-        switch (i % 3) {
-            case 0: simulation.addBubble(x, y); break;
-            case 1: simulation.addStarfish(x, y); break;
-            default: simulation.addTurtle(x, y); break;
-        }
-    }
 }
 
 }  // namespace
@@ -82,16 +65,20 @@ int main(int argc, char* argv[]) {
 
     Simulation simulation(static_cast<float>(config.windowWidth),
                           static_cast<float>(config.windowHeight));
+    simulation.populate(config.elementCount, config.seed);
+
     Renderer renderer(static_cast<float>(config.windowWidth),
                       static_cast<float>(config.windowHeight));
-
-    std::mt19937 rng(config.seed);
-    spawnElements(simulation, config, rng);
+    if (!renderer.loadFont()) {
+        std::cout << "Aviso: no se encontro ninguna fuente, los FPS solo saldran "
+                     "en el titulo de la ventana.\n\n";
+    }
 
     Metrics metrics;
     Stopwatch sectionTimer;
     sf::Clock deltaClock;
     int renderedFrames = 0;
+    float titleFps = -1.0f;
 
     while (window.isOpen()) {
         metrics.beginFrame();
@@ -108,8 +95,7 @@ int main(int argc, char* argv[]) {
 
             // Agregar elementos con el mouse queda desactivado: N viene por argumento.
             // if (auto click = event->getIf<sf::Event::MouseButtonPressed>()) {
-            //     simulation.addBubble(static_cast<float>(click->position.x),
-            //                          static_cast<float>(click->position.y));
+            //     ...
             // }
         }
 
@@ -121,11 +107,21 @@ int main(int argc, char* argv[]) {
 
         sectionTimer.start();
         window.clear();
-        renderer.render(window, simulation, simulation.getWaterLevel());
+        renderer.render(window, simulation, metrics.fps());
         window.display();
         double renderMs = sectionTimer.stopMs();
 
         metrics.endFrame(updateMs, renderMs);
+
+        // El titulo repite los FPS por si no hubo fuente disponible para el HUD.
+        if (metrics.fps() != titleFps) {
+            titleFps = metrics.fps();
+            std::ostringstream title;
+            title.precision(1);
+            title << std::fixed << "Screensaver acuatico - " << titleFps << " FPS - N="
+                  << config.elementCount;
+            window.setTitle(title.str());
+        }
 
         renderedFrames++;
         if (config.frameLimit > 0 && renderedFrames >= config.frameLimit) {
