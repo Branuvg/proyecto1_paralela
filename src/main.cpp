@@ -1,55 +1,138 @@
 #include <SFML/Graphics.hpp>
-#include "simulation.h"
+
+#include <chrono>
+#include <iostream>
+#include <random>
+
+#include "config.h"
+#include "metrics.h"
 #include "renderer.h"
+#include "simulation.h"
 
-int main() {
-    const float WINDOW_WIDTH = 1200.0f;
-    const float WINDOW_HEIGHT = 800.0f;
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
-    sf::RenderWindow window(sf::VideoMode(sf::Vector2u(static_cast<unsigned int>(WINDOW_WIDTH),
-                                                        static_cast<unsigned int>(WINDOW_HEIGHT))),
-                           "Marine Simulation");
-    window.setFramerateLimit(60);
+namespace {
 
-    Simulation simulation(WINDOW_WIDTH, WINDOW_HEIGHT);
-    Renderer renderer(WINDOW_WIDTH, WINDOW_HEIGHT);
+// Aplica el numero de hilos pedido y devuelve los que realmente quedaron activos.
+int setupThreads(const Config& config) {
+#ifdef _OPENMP
+    if (config.threadCount > 0) {
+        omp_set_num_threads(config.threadCount);
+    }
+    return omp_get_max_threads();
+#else
+    (void)config;
+    return 1;
+#endif
+}
 
-    simulation.addBubble(200, 300);
-    simulation.addBubble(400, 250);
-    simulation.addBubble(600, 400);
+// Reparte los N elementos entre los tres tipos en posiciones aleatorias.
+void spawnElements(Simulation& simulation, const Config& config, std::mt19937& rng) {
+    std::uniform_real_distribution<float> randomX(0.0f, static_cast<float>(config.windowWidth));
+    std::uniform_real_distribution<float> randomY(0.0f, static_cast<float>(config.windowHeight));
 
-    simulation.addStarfish(300, 500);
-    simulation.addStarfish(700, 550);
+    for (int i = 0; i < config.elementCount; i++) {
+        float x = randomX(rng);
+        float y = randomY(rng);
 
-    simulation.addTurtle(150, 450);
-    simulation.addTurtle(900, 480);
+        switch (i % 3) {
+            case 0: simulation.addBubble(x, y); break;
+            case 1: simulation.addStarfish(x, y); break;
+            default: simulation.addTurtle(x, y); break;
+        }
+    }
+}
 
-    sf::Clock clock;
+}  // namespace
+
+int main(int argc, char* argv[]) {
+    Config config;
+    switch (parseArgs(argc, argv, config)) {
+        case ParseResult::HELP_REQUESTED:
+            printUsage(argv[0]);
+            return 0;
+        case ParseResult::ERROR:
+            std::cerr << "\nUse " << argv[0] << " --help para ver las opciones.\n";
+            return 1;
+        case ParseResult::OK:
+            break;
+    }
+
+    // Con semilla 0 se toma la del reloj, pero se guarda para poder repetir la prueba.
+    if (config.seed == 0) {
+        config.seed = static_cast<unsigned>(
+            std::chrono::steady_clock::now().time_since_epoch().count());
+    }
+
+    int activeThreads = setupThreads(config);
+    printConfig(config, activeThreads);
+
+    auto width = static_cast<unsigned>(config.windowWidth);
+    auto height = static_cast<unsigned>(config.windowHeight);
+
+    sf::RenderWindow window(sf::VideoMode(sf::Vector2u(width, height)),
+                            "Screensaver acuatico");
+
+    // En modo medicion no se limitan los FPS: el vsync falsearia los tiempos.
+    if (config.frameLimit == 0) {
+        window.setFramerateLimit(60);
+    }
+
+    Simulation simulation(static_cast<float>(config.windowWidth),
+                          static_cast<float>(config.windowHeight));
+    Renderer renderer(static_cast<float>(config.windowWidth),
+                      static_cast<float>(config.windowHeight));
+
+    std::mt19937 rng(config.seed);
+    spawnElements(simulation, config, rng);
+
+    Metrics metrics;
+    Stopwatch sectionTimer;
+    sf::Clock deltaClock;
+    int renderedFrames = 0;
 
     while (window.isOpen()) {
+        metrics.beginFrame();
+
         while (auto event = window.pollEvent()) {
             if (event->is<sf::Event::Closed>()) {
                 window.close();
             }
-            if (auto mousePress = event->getIf<sf::Event::MouseButtonPressed>()) {
-                float x = static_cast<float>(mousePress->position.x);
-                float y = static_cast<float>(mousePress->position.y);
-
-                if (y < simulation.getWaterLevel()) {
-                    simulation.addStarfish(x, y);
-                } else {
-                    simulation.addBubble(x, y);
+            if (auto key = event->getIf<sf::Event::KeyPressed>()) {
+                if (key->code == sf::Keyboard::Key::Escape) {
+                    window.close();
                 }
             }
+
+            // Agregar elementos con el mouse queda desactivado: N viene por argumento.
+            // if (auto click = event->getIf<sf::Event::MouseButtonPressed>()) {
+            //     simulation.addBubble(static_cast<float>(click->position.x),
+            //                          static_cast<float>(click->position.y));
+            // }
         }
 
-        float dt = clock.restart().asSeconds();
-        simulation.update(dt);
+        float dt = deltaClock.restart().asSeconds();
 
+        sectionTimer.start();
+        simulation.update(dt);
+        double updateMs = sectionTimer.stopMs();
+
+        sectionTimer.start();
         window.clear();
         renderer.render(window, simulation, simulation.getWaterLevel());
         window.display();
+        double renderMs = sectionTimer.stopMs();
+
+        metrics.endFrame(updateMs, renderMs);
+
+        renderedFrames++;
+        if (config.frameLimit > 0 && renderedFrames >= config.frameLimit) {
+            window.close();
+        }
     }
 
+    metrics.printSummary(config.elementCount, activeThreads);
     return 0;
 }

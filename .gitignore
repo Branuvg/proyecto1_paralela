@@ -67,5 +67,8 @@ cmake-build-release/
 *~
 .DS_Store
 
-# Executable
-marine_sim
+# Executables
+screensaver_seq
+screensaver_par
+
+docs/

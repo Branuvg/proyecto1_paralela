@@ -1,5 +1,4 @@
 #include "simulation.h"
-#include <omp.h>
 #include <cstdlib>
 
 Simulation::Simulation(float width, float height)
@@ -22,7 +21,6 @@ void Simulation::update(float dt) {
 }
 
 void Simulation::updateElements(float dt) {
-#pragma omp parallel for
     for (size_t i = 0; i < elements.size(); ++i) {
         elements[i]->update(dt, screenWidth, screenHeight);
     }
@@ -31,7 +29,6 @@ void Simulation::updateElements(float dt) {
 void Simulation::checkCollisions() {
     const float COLLISION_DISTANCE = 25.0f;
 
-#pragma omp parallel for collapse(2)
     for (size_t i = 0; i < elements.size(); ++i) {
         for (size_t j = i + 1; j < elements.size(); ++j) {
             auto& e1 = elements[i];
